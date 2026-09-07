@@ -1,0 +1,16 @@
+# Build files
+build/
+**/build/
+
+# Compiled files
+*.o
+*.elf
+*.bin
+*.hex
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
