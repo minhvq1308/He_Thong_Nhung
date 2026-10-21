@@ -1,0 +1,83 @@
+/*
+ * BAI TAP 02 - STM32F103 (Blue Pill) + FreeRTOS
+ * EXTI0 (PA0, canh xuong) -> Queue -> Task UART -> UART1 (PA9 TX, 115200)
+ *
+ * Ban toi uu: bo snprintf (nhe Flash/stack), bo cau hinh GPIO trung lap,
+ * bo bien toan cuc, them cac ham ngat bat buoc (SysTick, EXTI0).
+ */
+
+#include "stm32f1xx_hal.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include <stddef.h>
+#include <stdint.h>
+
+/* ---------------------------- Cau hinh ---------------------------- */
+#define BTN_PORT            GPIOA
+#define BTN_PIN             GPIO_PIN_0
+#define DEBOUNCE_MS         200U
+#define QUEUE_LEN           8U
+#define UART_TASK_STACK     192U    /* don vi: word (4 byte) */
+#define UART_TASK_PRIO      2U
+
+/* Dat 0 neu project cua ban sinh tu CubeMX (da co SysTick_Handler va
+ * EXTI0_IRQHandler trong stm32f1xx_it.c) de tranh loi trung ham. */
+#define DEFINE_IRQ_HANDLERS 1
+
+/* ------------------------------ Bien ------------------------------ */
+static UART_HandleTypeDef huart1;
+static QueueHandle_t      xCountQueue;
+
+/* ------------------------- Khai bao ham --------------------------- */
+static void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
+static void vUartTask(void *pvParameters);
+static uint16_t FormatCount(char *out, uint32_t n);
+static void Error_Handler(void);
+extern void xPortSysTickHandler(void);
+
+/* ------------------------------ main ------------------------------ */
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_USART1_UART_Init();
+
+    /* Tao Queue de truyen so lan nhan nut tu ISR sang Task */
+    xCountQueue = xQueueCreate(QUEUE_LEN, sizeof(uint32_t));
+
+    if (xCountQueue == NULL)
+    {
+        Error_Handler();
+    }
+
+    /* Tao Task xu ly UART */
+    if (xTaskCreate(vUartTask,
+                    "UartTask",
+                    UART_TASK_STACK,
+                    NULL,
+                    UART_TASK_PRIORITY,
+                    NULL) != pdPASS)
+    {
+        Error_Handler();
+    }
+
+    /* Cau hinh ngat PA0 */
+    HAL_NVIC_SetPriority(EXTI0_IRQn, 5U, 0U);
+    HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
+    /* Chay FreeRTOS */
+    vTaskStartScheduler();
+
+    /* Neu den day thi scheduler khong khoi dong duoc */
+    Error_Handler();
+
+    return 0;
+}
+
